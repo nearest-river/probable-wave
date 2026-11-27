@@ -10,11 +10,14 @@ fn main()-> anyhow::Result<()> {
 
   let mut scene=Scene::from_particles(vec![
     Particle::proton(),
-    Particle::electron_at(vec3(0.5,0.0,0.0)),
+    Particle::electron_at(vec3(0.8,0.0,0.0)),
   ]);
 
   scene.on_tick(|Query { delta_time, particles, .. }| {
-    particles.positions[1]=Mat3A::from_angle(f32::TAU*delta_time)*particles.positions[1];
+    const OMEGA: f32=f32::PI/2.0;
+    let rotation=Mat3A::from_axis_angle(Vec3::Y,OMEGA*delta_time);
+
+    particles.positions[1]=rotation*particles.positions[1];
   });
 
 
@@ -22,8 +25,6 @@ fn main()-> anyhow::Result<()> {
   .with_title("xd")
   .with_scene(scene)
   .run();
-
-
 
   Ok(())
 }

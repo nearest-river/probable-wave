@@ -13,7 +13,6 @@ use crate::{
 
 use winit::{
   dpi::PhysicalSize,
-  event::WindowEvent,
   application::ApplicationHandler,
   window::{
     Window,
@@ -22,7 +21,15 @@ use winit::{
   event_loop::{
     EventLoop,
     ActiveEventLoop,
-  }
+  },
+  event::{
+    DeviceId,
+    DeviceEvent,
+    WindowEvent,
+    MouseButton,
+    ElementState,
+    MouseScrollDelta,
+  },
 };
 
 
@@ -83,6 +90,7 @@ struct State {
   renderer: Option<Renderer>,
   window: Option<Arc<Window>>,
   scene: Scene,
+  dragging: bool,
 }
 
 impl ApplicationHandler for State {
@@ -126,8 +134,36 @@ impl ApplicationHandler for State {
           self.scene.render(renderer);
         }
       },
+      WindowEvent::MouseInput { state, button: MouseButton::Left, .. }=> {
+        self.dragging=state==ElementState::Pressed;
+      },
+      WindowEvent::MouseWheel { delta, .. }=> {
+        let amount=match delta {
+          MouseScrollDelta::LineDelta(_,y)=> y,
+          MouseScrollDelta::PixelDelta(position)=> position.y as f32 / 120.0,
+        };
+
+        if let Some(renderer)=&mut self.renderer {
+          renderer.zoom_camera(amount);
+        }
+      },
+      WindowEvent::Focused(false)=> self.dragging=false,
       _=> {},
     }
+  }
+
+  fn device_event(&mut self,_event_loop: &ActiveEventLoop,_device_id: DeviceId,event: DeviceEvent) {
+    if !self.dragging {
+      return;
+    }
+
+    let DeviceEvent::MouseMotion { delta }=event else {
+      return;
+    };
+
+    if let Some(renderer)=&mut self.renderer {
+      renderer.orbit_camera(delta.0 as f32,delta.1 as f32);
+    };
   }
 
   fn about_to_wait(&mut self,_event_loop: &ActiveEventLoop) {
@@ -144,6 +180,7 @@ impl Default for State {
     Self {
       window: None,
       renderer: None,
+      dragging: false,
       scene: Scene::new(),
       title: "brush window".to_owned(),
       clear_color: Color::default(),

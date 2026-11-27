@@ -59,6 +59,7 @@ pub(crate) enum BufHeader {
 pub struct Vertex {
   pub position: Vec4,
   pub color: Color,
+  pub normal: Vec4,
 }
 
 
@@ -68,13 +69,23 @@ impl Vertex {
     Self {
       position,
       color,
+      normal: vec4(0.0,0.0,1.0,0.0),
+    }
+  }
+
+  #[inline(always)]
+  pub const fn with_normal(position: Vec4,color: Color,normal: Vec3)-> Self {
+    Self {
+      position,
+      color,
+      normal: vec4(normal.x,normal.y,normal.z,0.0),
     }
   }
 
   #[inline(always)]
   pub const fn layout()-> VertexBufferLayout<'static> {
     static ATTRS: &[VertexAttribute]={
-      let fields=[VertexFormat::Float32x4,VertexFormat::Float32x4];
+      let fields=[VertexFormat::Float32x4,VertexFormat::Float32x4,VertexFormat::Float32x4];
       assert!(vertex_attr_array_size(&fields)==mem::size_of::<Vertex>());
 
       &vertex_attr_array(&fields)

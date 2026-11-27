@@ -13,6 +13,7 @@ use crate::{
 };
 
 
+
 pub struct Particles {
   pub radii: Vec<f32>,
   pub charges: Vec<i32>,
@@ -26,8 +27,8 @@ pub struct Particle {
   pub radius: f32,
 }
 
-const ELECTRON_RADIUS: f32=0.01;
-const PROTON_RADIUS: f32=4.0 * ELECTRON_RADIUS;
+const ELECTRON_RADIUS: f32=0.05;
+const PROTON_RADIUS: f32=2.0 * ELECTRON_RADIUS;
 const NEUTRON_RADIUS: f32=PROTON_RADIUS;
 
 
@@ -87,29 +88,79 @@ impl Particle {
     }
   }
 
-  fn draw(&self, vertices: &mut Vec<Vertex>, indices: &mut Vec<u32>) {
-    const SEGMENTS: u32 = 60;
+  fn draw(&self,vertices: &mut Vec<Vertex>,indices: &mut Vec<u32>) {
+    const LATITUDE_SEGMENTS: u32=16;
+    const LONGITUDE_SEGMENTS: u32=32;
 
-    let centre=self.position;
     let color=self.color();
 
-    vertices.push(Vertex::new(centre.extend(1.0), color));
+    vertices.reserve((2 + (LATITUDE_SEGMENTS-1) * LONGITUDE_SEGMENTS) as usize);
 
-    vertices.reserve(SEGMENTS as usize);
+    indices.reserve((6 * LONGITUDE_SEGMENTS * (LATITUDE_SEGMENTS-1)) as usize);
 
-    for i in 0..SEGMENTS {
-      let theta=f32::TAU * i as f32 / SEGMENTS as f32;
-      let radius=self.radius*vec2(theta.cos(), theta.sin());
+    let mut push_vertex=|normal: Vec3| {
+      let world_position=self.position + self.radius*normal;
 
-      let position=centre+radius.extend(0.0);
-      vertices.push(Vertex::new(position.extend(1.0), color));
+      vertices.push(Vertex::with_normal(
+        world_position.extend(1.0),
+        color,
+        normal,
+      ));
+    };
+
+    push_vertex(Vec3::Y);
+
+    for lat in 1..LATITUDE_SEGMENTS {
+      let phi=f32::PI * lat as f32 / LATITUDE_SEGMENTS as f32;
+
+      let (sin_phi,cos_phi)=f32::sin_cos(phi);
+
+      for lon in 0..LONGITUDE_SEGMENTS {
+        let theta=f32::TAU * lon as f32 / LONGITUDE_SEGMENTS as f32;
+        let (sin_theta,cos_theta)=f32::sin_cos(theta);
+
+        let normal=Vec3::new(sin_phi*cos_theta,cos_phi,sin_phi*sin_theta);
+
+        push_vertex(normal);
+      }
     }
 
-    for i in 0..SEGMENTS {
-      let current=i+1;
-      let next=(i+1) % SEGMENTS + 1;
+    let bottom=1 + (LATITUDE_SEGMENTS-1) * LONGITUDE_SEGMENTS;
 
-      indices.extend([0, current, next]);
+    push_vertex(-Vec3::Y);
+
+    for lon in 0..LONGITUDE_SEGMENTS {
+      let current=1+lon;
+      let next=1 + (lon+1) % LONGITUDE_SEGMENTS;
+
+      indices.extend([0, next, current]);
+    }
+
+    // Connect adjacent latitude rings.
+    for lat in 0..(LATITUDE_SEGMENTS-2) {
+      let ring_a=1 + lat * LONGITUDE_SEGMENTS;
+      let ring_b=ring_a + LONGITUDE_SEGMENTS;
+
+      for lon in 0..LONGITUDE_SEGMENTS {
+        let next_lon=(lon+1) % LONGITUDE_SEGMENTS;
+
+        let a=ring_a+lon;
+        let b=ring_b+lon;
+
+        let next_a=ring_a+next_lon;
+        let next_b=ring_b+next_lon;
+
+        indices.extend([a,next_a,b,next_a,next_b,b]);
+      }
+    }
+
+    let last_ring=1 + (LATITUDE_SEGMENTS-2) * LONGITUDE_SEGMENTS;
+
+    for lon in 0..LONGITUDE_SEGMENTS {
+      let current=last_ring + lon;
+      let next=last_ring + (lon+1) % LONGITUDE_SEGMENTS;
+
+      indices.extend([bottom,current,next]);
     }
   }
 

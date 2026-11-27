@@ -1,28 +1,6 @@
 
+use wgpu::*;
 use std::borrow::Cow;
-use wgpu::{
-  Face,
-  Device,
-  FrontFace,
-  BlendState,
-  ColorWrites,
-  PolygonMode,
-  VertexState,
-  ShaderSource,
-  FragmentState,
-  TextureFormat,
-  PrimitiveState,
-  RenderPipeline,
-  BindGroupLayout,
-  ColorTargetState,
-  MultisampleState,
-  PrimitiveTopology,
-  VertexBufferLayout,
-  ShaderModuleDescriptor,
-  PipelineLayoutDescriptor,
-  RenderPipelineDescriptor,
-  PipelineCompilationOptions,
-};
 
 
 
@@ -32,6 +10,7 @@ pub struct PipelineBuilder<'a> {
   vertex_entry: Option<&'a str>,
   fragment_entry: Option<&'a str>,
   px_fmt: TextureFormat,
+  depth_stencil: Option<DepthStencilState>,
   bind_group_layouts: Vec<Option<&'a BindGroupLayout>>,
   vertex_buffer_layouts: Vec<Option<VertexBufferLayout<'a>>>,
 }
@@ -43,6 +22,7 @@ impl<'a> PipelineBuilder<'a> {
   pub const fn new()-> Self {
     Self {
       vertex_entry: None,
+      depth_stencil: None,
       shader_source: None,
       fragment_entry: None,
       bind_group_layouts: Vec::new(),
@@ -108,6 +88,12 @@ impl<'a> PipelineBuilder<'a> {
     self
   }
 
+  #[inline(always)]
+  pub const fn with_depth_stencil(&mut self,depth_stencil: DepthStencilState)-> &mut Self {
+    self.depth_stencil=Some(depth_stencil);
+    self
+  }
+
   pub fn build(&self,dev: &Device)-> RenderPipeline {
     let shader_source=self.shader_source.expect("no shader source provided");
 
@@ -132,8 +118,8 @@ impl<'a> PipelineBuilder<'a> {
 
     let render_pipeline_desc=RenderPipelineDescriptor {
       cache: None,
-      depth_stencil: None,
       multiview_mask: None,
+      depth_stencil: self.depth_stencil.clone(),
       label: Some("render pipeline"),
       layout: Some(&pipeline_layout),
       multisample: MultisampleState {
