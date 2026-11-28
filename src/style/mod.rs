@@ -66,6 +66,7 @@ impl Color {
   pub const CYAN: Self=color(0.0,1.0,1.0,1.0);
   pub const MAGENTA: Self=color(1.0,0.0,1.0,1.0);
   pub const YELLOW: Self=color(1.0,1.0,0.0,1.0);
+  pub const PURPLE: Self=color(0.5,0.0,1.0,1.0);
 
   #[inline(always)]
   pub const fn new(r: f32,g: f32,b: f32,a: f32)-> Self {

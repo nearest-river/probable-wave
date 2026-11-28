@@ -5,10 +5,9 @@ use glam::prelude::*;
 use std::f64::consts as f64;
 
 use crate::{
-  style::Color,
-  physics::{
-    Hydrogen1S,
-    QuantumState,
+  physics::QuantumState,
+  style::{
+    Color,
   },
   renderer::{
     Mesh,
@@ -44,6 +43,7 @@ const FACES: [[u32;3];8]=[
 
 pub struct HydrogenCloud {
   samples: Vec<Vec3>,
+  colors: Vec<Color>,
   marker_radius: f32,
 }
 
@@ -55,6 +55,7 @@ impl HydrogenCloud {
     Self {
       samples,
       marker_radius,
+      colors: Vec::new(),
     }
   }
 
@@ -68,6 +69,8 @@ impl HydrogenCloud {
     assert!(marker_radius.is_finite() && marker_radius > 0.0);
 
     let n=state.principal().get();
+    let l=state.azimuthal();
+    let m=state.magnetic().unsigned_abs();
 
     let n_squared=(n*n) as f32;
 
@@ -84,6 +87,12 @@ impl HydrogenCloud {
     let burn_in=10_000;
     let thinning=8;
 
+
+    let angular_norm=angular_norm(l,m);
+    let color_scale=1.5*5.0_f64.powi(n as i32) / angular_norm;
+    let mut colors=Vec::<Color>::with_capacity(count);
+
+
     let mut samples=Vec::<Vec3>::with_capacity(count);
 
     for iteration in 0..(burn_in + thinning*count) {
@@ -97,25 +106,36 @@ impl HydrogenCloud {
 
       if iteration>=burn_in && (iteration-burn_in)%thinning == 0 {
         samples.push(position);
+        colors.push(heatmap_fire(density*color_scale));
       }
     }
 
-    Self::new(samples, marker_radius)
+    Self {
+      colors,
+      samples,
+      marker_radius,
+    }
   }
 
   pub fn gen_mesh(&self,dev: &Device)-> Mesh {
     let mut builder=MeshBuilder::new();
 
     builder.insert_indexed_buf_with(|indices,vertices| {
-      for &sample in &self.samples {
-        let base=vertices.len() as u32;
+      for (sample_idx,&sample) in self.samples.iter().enumerate() {
+        let sample=vec3(sample.x,sample.z,-sample.y);
+        let color=unsafe {
+          *self.colors
+          .get_unchecked(sample_idx)
+        };
 
+
+        let base=vertices.len() as u32;
         for dir in DIRECTIONS {
           let position=sample + dir*self.marker_radius;
 
           vertices.push(Vertex::with_normal(
             position.extend(1.0),
-            Color::YELLOW,
+            color,
             dir,
           ));
         }
@@ -131,6 +151,42 @@ impl HydrogenCloud {
 }
 
 
+#[inline]
+fn angular_norm(l: u32,m: u32)-> f64 {
+  let (l,m)=(l as u64, m as u64);
+
+  debug_assert!(m <= l);
+  let mut factorial_ratio=1.0;
+  let mut i=1u64;
+
+  while i<=m {
+    factorial_ratio /= ((l-m+i) * (l+i)) as f64;
+    i+=1;
+  }
+
+  (2*l + 1) as f64 / (4.0*f64::PI) * factorial_ratio
+}
+
+const FIRE_STOPS: [Vec3;6]=[
+  vec3(0.0,0.0,0.0), // black
+  vec3(0.5, 0.0, 0.99), // purple
+  vec3(0.8, 0.0, 0.0), // red
+  vec3(1.0, 0.5, 0.0), // orange
+  vec3(1.0, 1.0, 0.0), // yellow
+  vec3(1.0,1.0,1.0), // white
+];
+
+#[inline]
+fn heatmap_fire(value: f64)-> Color {
+  let x=5.0*f32::clamp(value as f32,0.0,1.0);
+
+  let i=(x as usize).min(4);
+  let t=x - i as f32;
+
+  let rgb=FIRE_STOPS[i].lerp(FIRE_STOPS[i+1], t);
+
+  Color::from_vec3(rgb)
+}
 
 
 

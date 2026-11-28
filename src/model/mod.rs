@@ -1,17 +1,15 @@
 
-mod particles;
+mod atom;
 
-use wgpu::Device;
 use std::time::Instant;
+pub use atom::HydrogenAtom;
 
-use crate::renderer::{
-  Mesh,
-  Renderer,
-};
-
-pub use particles::{
-  Particle,
-  Particles,
+use crate::{
+  physics::QuantumState,
+  renderer::{
+    Mesh,
+    Renderer,
+  },
 };
 
 
@@ -19,25 +17,35 @@ pub struct Scene {
   mesh: Option<Mesh>,
   time: Option<Instant>,
   time_0: Option<Instant>,
-  mesh_generator: Box<dyn Fn(&Device)-> Mesh>,
+  atom: Option<HydrogenAtom>,
 }
 
 
 impl Scene {
-
   #[inline]
-  pub fn from_mesh_generator(mesh_generator: impl Fn(&Device)-> Mesh+'static)-> Self {
+  pub fn new()-> Self {
     Self {
+      atom: None,
       mesh: None,
       time: None,
       time_0: None,
-      mesh_generator: Box::from(mesh_generator),
     }
   }
 
-  pub(crate) fn render(&mut self,renderer: &mut Renderer) {
+  #[inline(always)]
+  pub fn with_atom(&mut self,atom: HydrogenAtom) {
+    self.atom=Some(atom);
+  }
+
+  pub(crate) fn render(
+    &mut self,
+    renderer: &mut Renderer,
+    egui_renderer: &mut egui_wgpu::Renderer,
+    paint_jobs: &[egui::ClippedPrimitive],
+    textures_delta: &egui::TexturesDelta,
+) {
     let now=Instant::now();
-    let dt=self.time
+    let _dt=self.time
     .replace(now)
     .map_or(0.0,|t_0| now.duration_since(t_0).as_secs_f32());
 
@@ -51,21 +59,23 @@ impl Scene {
 
     let time=now.duration_since(time_0).as_secs_f32();
 
-    drop((time,dt));
 
-    if self.mesh.is_none() {
-      self.mesh=Some((self.mesh_generator)(&renderer.dev));
+    if self.mesh.is_none() && let Some(atom)=&self.atom {
+      self.mesh=Some(atom.gen_mesh(&renderer.dev));
     }
 
     // SAFETY(nate): trust me bro.
     let mesh=unsafe { self.mesh.as_ref().unwrap_unchecked() };
 
-    renderer.render(mesh);
+    renderer.render(mesh, time, egui_renderer, paint_jobs, textures_delta);
   }
 
-  #[inline]
-  fn update(&mut self,renderer: &Renderer) {
-    self.mesh=Some((self.mesh_generator)(&renderer.dev));
+  #[inline(always)]
+  pub fn set_quantum_state(&mut self,state: QuantumState,renderer: &Renderer) {
+    if let Some(atom)=&mut self.atom {
+      atom.state=state;
+      self.mesh=Some(atom.gen_mesh(&renderer.dev));
+    }
   }
 }
 

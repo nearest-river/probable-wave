@@ -30,7 +30,6 @@ pub use mesh::{
 
 use std::{
   mem,
-  iter,
   sync::Arc,
   f32::consts as f32,
 };
@@ -67,6 +66,7 @@ pub struct Renderer {
 
   camera: OrbitCamera,
   camera_buf: Buffer,
+  animation_buf: Buffer,
   camera_bind_group: BindGroup,
 }
 
@@ -85,7 +85,15 @@ struct CameraUniform {
   position: Vec4,
 }
 
-const CAMERA_FOV: f32=f32::FRAC_PI_2; // 90deg
+#[repr(C,align(16))]
+#[derive(Clone,Copy,Pod,Zeroable)]
+struct AnimationUniform {
+  time: f32,
+  angular_velocity: f32,
+  _padding: [f32; 2],
+}
+
+const CAMERA_FOV: f32=120f32.to_radians(); // 90deg
 const CAMERA_NEAR: f32=0.01;
 const CAMERA_FAR: f32=100.0;
 
@@ -127,6 +135,18 @@ impl Renderer {
       contents: bytemuck::bytes_of(&camera_uniform),
     });
 
+    let animation_uniform=AnimationUniform {
+      time: 0.0,
+      angular_velocity: 0.5,
+      _padding: [0.0; 2]
+    };
+
+    let animation_buf=dev.create_buffer_init(&BufferInitDescriptor {
+      label: Some("animation uniform buffer"),
+      usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+      contents: bytemuck::bytes_of(&animation_uniform),
+    });
+
     let camera_bind_group_layout=dev.create_bind_group_layout(&BindGroupLayoutDescriptor {
       label: Some("camera bind group layout"),
       entries: &[
@@ -140,6 +160,16 @@ impl Renderer {
           },
           count: None,
         },
+        BindGroupLayoutEntry {
+          binding: 1,
+          visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+              ty: BufferBindingType::Uniform,
+              has_dynamic_offset: false,
+              min_binding_size: None,
+          },
+          count: None,
+        },
       ],
     });
 
@@ -150,6 +180,10 @@ impl Renderer {
         BindGroupEntry {
           binding: 0,
           resource: camera_buf.as_entire_binding(),
+        },
+        BindGroupEntry {
+          binding: 1,
+          resource: animation_buf.as_entire_binding(),
         },
       ],
     });
@@ -174,6 +208,7 @@ impl Renderer {
     .add_vertex_buffer_layout(Vertex::layout())
     .build(&dev);
 
+
     Self {
       dev,
       queue,
@@ -186,6 +221,7 @@ impl Renderer {
       depth_view,
       camera_buf,
       camera,
+      animation_buf,
       camera_bind_group,
     }
   }
@@ -214,6 +250,11 @@ impl Renderer {
   }
 
   #[inline(always)]
+  pub const fn surface_format(&self)-> TextureFormat {
+    self.surface_config.format
+  }
+
+  #[inline(always)]
   pub const fn surface_size(&self)-> UVec2 {
     UVec2::new(self.surface_config.width,self.surface_config.height)
   }
@@ -223,100 +264,196 @@ impl Renderer {
     self.clear_color
   }
 
-  pub(crate) fn render(&self,mesh: &Mesh) {
-    let surface_texture=match self.surface.get_current_texture() {
-      CurrentSurfaceTexture::Success(frame)=> frame,
-      CurrentSurfaceTexture::Suboptimal(frame)=> {
-        self.surface.configure(&self.dev,&self.surface_config);
-        frame
-      }
-      CurrentSurfaceTexture::Lost|CurrentSurfaceTexture::Outdated=> {
-        self.surface.configure(&self.dev,&self.surface_config);
-        return;
-      }
-      CurrentSurfaceTexture::Timeout|CurrentSurfaceTexture::Occluded|CurrentSurfaceTexture::Validation=> return,
+  pub(crate) fn render(
+    &self,
+    mesh: &Mesh,
+    time: f32,
+    egui_renderer: &mut egui_wgpu::Renderer,
+    paint_jobs: &[egui::ClippedPrimitive],
+    textures_delta: &egui::TexturesDelta,
+) {
+    let animation = AnimationUniform {
+      time,
+      angular_velocity: 0.5,
+      _padding: [0.0; 2]
     };
 
-    let texture_view_desc=TextureViewDescriptor::default();
-    let texture_view=surface_texture.texture.create_view(&texture_view_desc);
+    self.queue.write_buffer(
+      &self.animation_buf,
+      0,
+      bytemuck::bytes_of(&animation),
+    );
 
-    let command_encoder_desc=CommandEncoderDescriptor {
-      label: Some("render encoder"),
-    };
-
-    let mut command_encoder=self.dev.create_command_encoder(&command_encoder_desc);
-
-    let color_attachment=RenderPassColorAttachment {
-      view: &texture_view,
-      ops: Operations {
-        store: StoreOp::Store,
-        load: LoadOp::Clear(self.clear_color.into_wgpu_color()),
-      },
-      resolve_target: None,
-      depth_slice: None,
-    };
-
-    {
-      let depth_stencil_attachment=RenderPassDepthStencilAttachment {
-        stencil_ops: None,
-        view: &self.depth_view,
-        depth_ops: Some(Operations {
-          load: LoadOp::Clear(1.0),
-          store: StoreOp::Store,
-        }),
-      };
-
-      let render_pass_desc=RenderPassDescriptor {
-        label: Some("render pass"),
-        color_attachments: &[Some(color_attachment)],
-        depth_stencil_attachment: Some(depth_stencil_attachment),
-        ..Default::default()
-      };
-
-      let mut render_pass=command_encoder.begin_render_pass(&render_pass_desc);
-      render_pass.set_pipeline(&self.render_pipeline);
-      render_pass.set_bind_group(0,&self.camera_bind_group,&[]);
-
-      let width=self.surface_config.width as f32;
-      let height=self.surface_config.height as f32;
-      let size=width.min(height);
-      render_pass.set_viewport(
-        (width-size) * 0.5,
-        (height-size) * 0.5,
-        size,
-        size,
-        0.0,
-        1.0
-      );
-
-      for header in &mesh.headers {
-        match header {
-          &BufHeader::VertexBuf { offset, size }=> {
-            let vertex_bounds=offset..offset+size as u64;
-            let vertices=0..size/mem::size_of::<Vertex>() as u32;
-
-            render_pass.set_vertex_buffer(0,mesh.vertex_buf.slice(vertex_bounds));
-            render_pass.draw(vertices,0..1);
-          },
-          &BufHeader::IndexedBuf { ix_offset, vx_offset, ix_size, vx_size }=> {
-            let idx_bounds=ix_offset..ix_offset+ix_size as u64;
-            let vertex_bounds=vx_offset..vx_offset+vx_size as u64;
-            let indices=0..ix_size/mem::size_of::<u32>() as u32;
-
-            render_pass.set_index_buffer(mesh.index_buf.slice(idx_bounds),IndexFormat::Uint32);
-            render_pass.set_vertex_buffer(0,mesh.vertex_buf.slice(vertex_bounds));
-            render_pass.draw_indexed(indices,0,0..1);
-          },
+    let surface_texture = match self.surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) => frame,
+        CurrentSurfaceTexture::Suboptimal(frame) => {
+            self.surface.configure(&self.dev, &self.surface_config);
+            frame
         }
-      }
+        CurrentSurfaceTexture::Lost | CurrentSurfaceTexture::Outdated => {
+            self.surface.configure(&self.dev, &self.surface_config);
+            return;
+        }
+        CurrentSurfaceTexture::Timeout
+        | CurrentSurfaceTexture::Occluded
+        | CurrentSurfaceTexture::Validation => return,
+    };
+
+    let texture_view = surface_texture
+        .texture
+        .create_view(&TextureViewDescriptor::default());
+
+    let mut encoder = self.dev.create_command_encoder(
+        &CommandEncoderDescriptor {
+            label: Some("render encoder"),
+        },
+    );
+
+    let screen = egui_wgpu::ScreenDescriptor {
+        size_in_pixels: [
+            self.surface_config.width,
+            self.surface_config.height,
+        ],
+        pixels_per_point: self.window.scale_factor() as f32,
+    };
+for (id, deltas) in &textures_delta.set {
+    for delta in deltas {
+        egui_renderer.update_texture(
+            &self.dev,
+            &self.queue,
+            *id,
+            delta,
+        );
+    }
+}
+
+    let callback_buffers = egui_renderer.update_buffers(
+        &self.dev,
+        &self.queue,
+        &mut encoder,
+        paint_jobs,
+        &screen,
+    );
+
+    // 3D scene
+    {
+        let color_attachment = RenderPassColorAttachment {
+            view: &texture_view,
+            ops: Operations {
+                store: StoreOp::Store,
+                load: LoadOp::Clear(self.clear_color.into_wgpu_color()),
+            },
+            resolve_target: None,
+            depth_slice: None,
+        };
+
+        let depth_attachment = RenderPassDepthStencilAttachment {
+            view: &self.depth_view,
+            depth_ops: Some(Operations {
+                load: LoadOp::Clear(1.0),
+                store: StoreOp::Store,
+            }),
+            stencil_ops: None,
+        };
+
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("3D render pass"),
+            color_attachments: &[Some(color_attachment)],
+            depth_stencil_attachment: Some(depth_attachment),
+            ..Default::default()
+        });
+
+        pass.set_pipeline(&self.render_pipeline);
+        pass.set_bind_group(0, &self.camera_bind_group, &[]);
+
+        let width = self.surface_config.width as f32;
+        let height = self.surface_config.height as f32;
+        let size = width.min(height);
+
+        pass.set_viewport(
+            (width - size) * 0.5,
+            (height - size) * 0.5,
+            size,
+            size,
+            0.0,
+            1.0,
+        );
+
+        for header in &mesh.headers {
+            match header {
+                &BufHeader::VertexBuf { offset, size } => {
+                    pass.set_vertex_buffer(
+                        0,
+                        mesh.vertex_buf.slice(offset..offset + size as u64),
+                    );
+                    pass.draw(
+                        0..size / mem::size_of::<Vertex>() as u32,
+                        0..1,
+                    );
+                }
+                &BufHeader::IndexedBuf {
+                    ix_offset,
+                    vx_offset,
+                    ix_size,
+                    vx_size,
+                } => {
+                    pass.set_index_buffer(
+                        mesh.index_buf.slice(ix_offset..ix_offset + ix_size as u64),
+                        IndexFormat::Uint32,
+                    );
+                    pass.set_vertex_buffer(
+                        0,
+                        mesh.vertex_buf.slice(vx_offset..vx_offset + vx_size as u64),
+                    );
+                    pass.draw_indexed(
+                        0..ix_size / mem::size_of::<u32>() as u32,
+                        0,
+                        0..1,
+                    );
+                }
+            }
+        }
     }
 
+    // egui overlay
+    {
+        let attachment = RenderPassColorAttachment {
+            view: &texture_view,
+            ops: Operations {
+                load: LoadOp::Load,
+                store: StoreOp::Store,
+            },
+            resolve_target: None,
+            depth_slice: None,
+        };
 
-    self.queue.submit(iter::once(command_encoder.finish()));
+        let pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("egui render pass"),
+            color_attachments: &[Some(attachment)],
+            depth_stencil_attachment: None,
+            ..Default::default()
+        });
+
+        egui_renderer.render(
+            &mut pass.forget_lifetime(),
+            paint_jobs,
+            &screen,
+        );
+    }
+
+    self.queue.submit(
+        callback_buffers
+            .into_iter()
+            .chain(std::iter::once(encoder.finish())),
+    );
+
+    for id in &textures_delta.free {
+        egui_renderer.free_texture(id);
+    }
 
     self.window.pre_present_notify();
     self.queue.present(surface_texture);
-  }
+}
 
   pub(crate) fn resize(&mut self,size: PhysicalSize<u32>) {
     if size.width==0 || size.height==0 {
@@ -396,7 +533,7 @@ impl Default for OrbitCamera {
     Self {
       yaw: 0.0,
       pitch: 0.0,
-      distance: 10.0,
+      distance: 5.0,
       target: Vec3::ZERO,
     }
   }

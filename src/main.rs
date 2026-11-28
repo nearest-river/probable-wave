@@ -1,29 +1,23 @@
 
-use probable_wave::prelude::*;
-use rand::{
-  SeedableRng,
-  rngs::StdRng,
-};
 
+use probable_wave::prelude::*;
 
 
 fn main()-> anyhow::Result<()> {
   env_logger::init();
 
-  let mut rng=StdRng::seed_from_u64(0x1_5eed);
 
   let initial_state=QuantumState::new(4,3,1,SpinProjection::Up)?;
+  let atom=HydrogenAtom::new(initial_state);
 
-  let cloud=HydrogenCloud::sample(initial_state,16384,0.012,&mut rng);
+  let mut scene=Scene::new();
 
-  let scene=Scene::from_mesh_generator(
-    move |dev| cloud.gen_mesh(dev)
-  );
+  scene.with_atom(atom);
 
 
   Engine::new()
-  .with_title("xd")
   .with_scene(scene)
+  .with_title("xd")
   .run();
 
   Ok(())

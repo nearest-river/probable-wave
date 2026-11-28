@@ -111,12 +111,8 @@ impl QuantumState {
 
     radial*radial*angular
   }
-
-
-
-
-
 }
+
 
 fn associated_laguerre(k: u32,alpha: u32,x: f64)-> f64 {
   match k {

@@ -16,5 +16,8 @@ thiserror = "2"
 wgpu = { version = "30", features = ["angle", "custom", "serde", "trace", "webgl", "wgpu-core"] }
 wgpu-core = { version = "30", features = ["wgsl"] }
 winit = "0.30"
+egui = { version = "0.37", features = ["default_fonts"] }
+egui-winit = "0.37"
+egui-wgpu = "0.37"
 
 
