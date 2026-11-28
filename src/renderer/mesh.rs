@@ -22,7 +22,6 @@ use wgpu::{
   },
 };
 
-
 pub struct Mesh {
   pub(crate) index_buf: Buffer,
   pub(crate) vertex_buf: Buffer,

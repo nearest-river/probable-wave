@@ -11,6 +11,7 @@ env_logger = "0.11.11"
 glam = { version = "0.34", features = ["bytemuck"] }
 log = { version = "0.4.34", features = ["serde"] }
 pollster = { version = "1", features = ["macro"] }
+rand = { version = "0.10.4", features = ["simd_support"] }
 thiserror = "2"
 wgpu = { version = "30", features = ["angle", "custom", "serde", "trace", "webgl", "wgpu-core"] }
 wgpu-core = { version = "30", features = ["wgsl"] }

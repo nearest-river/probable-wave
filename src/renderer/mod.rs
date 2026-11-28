@@ -396,7 +396,7 @@ impl Default for OrbitCamera {
     Self {
       yaw: 0.0,
       pitch: 0.0,
-      distance: 2.0,
+      distance: 10.0,
       target: Vec3::ZERO,
     }
   }

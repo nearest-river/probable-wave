@@ -1,6 +1,7 @@
 
 mod particles;
 
+use wgpu::Device;
 use std::time::Instant;
 
 use crate::renderer::{
@@ -16,47 +17,22 @@ pub use particles::{
 
 pub struct Scene {
   mesh: Option<Mesh>,
-  particles: Particles,
   time: Option<Instant>,
   time_0: Option<Instant>,
-  on_tick: Option<Box<dyn Fn(Query<'_>)>>,
-}
-
-pub struct Query<'a> {
-  pub time: f32,
-  pub delta_time: f32,
-  pub particles: &'a mut Particles,
+  mesh_generator: Box<dyn Fn(&Device)-> Mesh>,
 }
 
 
 impl Scene {
-  pub fn new()-> Self {
-    let particles=Particles::default();
 
+  #[inline]
+  pub fn from_mesh_generator(mesh_generator: impl Fn(&Device)-> Mesh+'static)-> Self {
     Self {
-      particles,
       mesh: None,
       time: None,
       time_0: None,
-      on_tick: None,
+      mesh_generator: Box::from(mesh_generator),
     }
-  }
-
-  #[inline(always)]
-  pub fn from_particles(particles: impl Into<Particles>)-> Self {
-    let particles=particles.into();
-    Self {
-      particles,
-      mesh: None,
-      time: None,
-      time_0: None,
-      on_tick: None,
-    }
-  }
-
-  #[inline(always)]
-  pub fn on_tick(&mut self,f: impl Fn(Query<'_>)+'static) {
-    self.on_tick=Some(Box::from(f));
   }
 
   pub(crate) fn render(&mut self,renderer: &mut Renderer) {
@@ -73,19 +49,12 @@ impl Scene {
       }
     };
 
+    let time=now.duration_since(time_0).as_secs_f32();
 
-    if let Some(on_tick)=self.on_tick.as_deref() {
-      on_tick(Query {
-        delta_time: dt,
-        particles: &mut self.particles,
-        time: now.duration_since(time_0).as_secs_f32(),
-      });
-
-      self.update(renderer);
-    }
+    drop((time,dt));
 
     if self.mesh.is_none() {
-      self.mesh=Some(self.particles.gen_mesh(&renderer.dev));
+      self.mesh=Some((self.mesh_generator)(&renderer.dev));
     }
 
     // SAFETY(nate): trust me bro.
@@ -96,7 +65,7 @@ impl Scene {
 
   #[inline]
   fn update(&mut self,renderer: &Renderer) {
-    self.mesh=Some(self.particles.gen_mesh(&renderer.dev));
+    self.mesh=Some((self.mesh_generator)(&renderer.dev));
   }
 }
 

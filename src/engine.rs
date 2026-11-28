@@ -72,7 +72,7 @@ impl Engine {
   }
 
   pub fn with_scene(mut self,scene: Scene)-> Self {
-    self.state.scene=scene;
+    self.state.scene=Some(scene);
     self
   }
 
@@ -89,7 +89,7 @@ struct State {
   inner_size: PhysicalSize<u32>,
   renderer: Option<Renderer>,
   window: Option<Arc<Window>>,
-  scene: Scene,
+  scene: Option<Scene>,
   dragging: bool,
 }
 
@@ -130,8 +130,8 @@ impl ApplicationHandler for State {
         }
       },
       WindowEvent::RedrawRequested=> {
-        if let Some(renderer)=&mut self.renderer {
-          self.scene.render(renderer);
+        if let Some(renderer)=&mut self.renderer && let Some(scene)=&mut self.scene {
+          scene.render(renderer);
         }
       },
       WindowEvent::MouseInput { state, button: MouseButton::Left, .. }=> {
@@ -178,10 +178,10 @@ impl Default for State {
   #[inline(always)]
   fn default()-> Self {
     Self {
+      scene: None,
       window: None,
       renderer: None,
       dragging: false,
-      scene: Scene::new(),
       title: "brush window".to_owned(),
       clear_color: Color::default(),
       inner_size: PhysicalSize::new(1280,720),
