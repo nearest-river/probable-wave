@@ -268,30 +268,24 @@ impl State {
 
     egui::Window::new("HYDROGEN")
     .default_pos([20.0, 20.0])
-      .default_width(260.0)
+    .default_width(260.0)
     .resizable(false)
     .show(&self.egui_ctx, |ui| {
       ui.heading("Quantum numbers");
       ui.add_space(8.0);
 
-      changed |= ui
-        .add(Slider::new(&mut self.n, 1..=6).text("n · Principal"))
-        .changed();
+      changed|=ui.add(Slider::new(&mut self.n, 1..=6).text("n · Principal"))
+      .changed();
 
       self.l=self.l.min(self.n - 1);
 
-      changed |= ui
-        .add(Slider::new(&mut self.l, 0..=self.n - 1).text("l · Azimuthal"))
-        .changed();
+      changed|=ui.add(Slider::new(&mut self.l, 0..=self.n - 1).text("l · Azimuthal"))
+      .changed();
 
       self.m=self.m.clamp(-(self.l as i32), self.l as i32);
 
-      changed |= ui
-        .add(Slider::new(
-          &mut self.m,
-          -(self.l as i32)..=(self.l as i32),
-        ).text("m · Magnetic"))
-        .changed();
+      changed|=ui.add(Slider::new(&mut self.m,-(self.l as i32)..=(self.l as i32)).text("m · Magnetic"))
+      .changed();
 
       ui.add_space(12.0);
       ui.separator();
@@ -299,7 +293,7 @@ impl State {
 
       ui.add(
         Slider::new(&mut self.intensity, 0.1..=3.0)
-          .text("Color intensity"),
+        .text("Color intensity"),
       );
 
       ui.add_space(12.0);

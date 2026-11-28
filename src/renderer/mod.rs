@@ -137,7 +137,7 @@ impl Renderer {
       contents: bytemuck::bytes_of(&camera_uniform),
     });
 
-    let animation_uniform = AnimationUniform {
+    let animation_uniform=AnimationUniform {
       time: 0.0,
       angular_velocity: 0.5,
       intensity: 1.0,
@@ -145,7 +145,7 @@ impl Renderer {
       clip: [1.0, 1.0, 1.0, 0.0],
     };
 
-    let animation_buf = dev.create_buffer_init(&BufferInitDescriptor {
+    let animation_buf=dev.create_buffer_init(&BufferInitDescriptor {
       label: Some("animation uniform buffer"),
       usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
       contents: bytemuck::bytes_of(&animation_uniform),
@@ -279,176 +279,164 @@ impl Renderer {
 
   self.queue.write_buffer(&self.animation_buf,0,bytemuck::bytes_of(&animation));
 
-    let surface_texture = match self.surface.get_current_texture() {
-        CurrentSurfaceTexture::Success(frame) => frame,
-        CurrentSurfaceTexture::Suboptimal(frame) => {
-            self.surface.configure(&self.dev, &self.surface_config);
-            frame
-        }
-        CurrentSurfaceTexture::Lost | CurrentSurfaceTexture::Outdated => {
-            self.surface.configure(&self.dev, &self.surface_config);
-            return;
-        }
-        CurrentSurfaceTexture::Timeout
-        | CurrentSurfaceTexture::Occluded
-        | CurrentSurfaceTexture::Validation => return,
-    };
+  let surface_texture=match self.surface.get_current_texture() {
+    CurrentSurfaceTexture::Success(frame)=> frame,
+    CurrentSurfaceTexture::Suboptimal(frame)=> {
+      self.surface.configure(&self.dev,&self.surface_config);
+      frame
+    }
+    CurrentSurfaceTexture::Lost|CurrentSurfaceTexture::Outdated=> {
+      self.surface.configure(&self.dev, &self.surface_config);
+      return;
+    }
+    CurrentSurfaceTexture::Timeout|CurrentSurfaceTexture::Occluded|CurrentSurfaceTexture::Validation=> return,
+  };
 
-    let texture_view = surface_texture
-        .texture
-        .create_view(&TextureViewDescriptor::default());
+  let texture_view=surface_texture.texture
+  .create_view(&TextureViewDescriptor::default());
 
-    let mut encoder = self.dev.create_command_encoder(
-        &CommandEncoderDescriptor {
-            label: Some("render encoder"),
-        },
-    );
+  let mut encoder=self.dev.create_command_encoder(
+    &CommandEncoderDescriptor {
+      label: Some("render encoder"),
+    },
+  );
 
-    let screen = egui_wgpu::ScreenDescriptor {
-        size_in_pixels: [
-            self.surface_config.width,
-            self.surface_config.height,
-        ],
-        pixels_per_point: self.window.scale_factor() as f32,
-    };
-for (id, deltas) in &textures_delta.set {
+  let screen=egui_wgpu::ScreenDescriptor {
+    size_in_pixels: [
+      self.surface_config.width,
+      self.surface_config.height,
+    ],
+    pixels_per_point: self.window.scale_factor() as f32,
+  };
+
+  for (id, deltas) in &textures_delta.set {
     for delta in deltas {
-        egui_renderer.update_texture(
-            &self.dev,
-            &self.queue,
-            *id,
-            delta,
-        );
+      egui_renderer.update_texture(&self.dev,&self.queue,*id,delta);
     }
-}
+  }
 
-    let callback_buffers = egui_renderer.update_buffers(
-        &self.dev,
-        &self.queue,
-        &mut encoder,
-        paint_jobs,
-        &screen,
+  let callback_buffers=egui_renderer.update_buffers(
+    &self.dev,
+    &self.queue,
+    &mut encoder,
+    paint_jobs,
+    &screen,
+  );
+
+  // 3D scene
+  {
+    let color_attachment=RenderPassColorAttachment {
+      view: &texture_view,
+      ops: Operations {
+        store: StoreOp::Store,
+        load: LoadOp::Clear(self.clear_color.into_wgpu_color()),
+      },
+      resolve_target: None,
+      depth_slice: None,
+    };
+
+    let depth_attachment=RenderPassDepthStencilAttachment {
+      view: &self.depth_view,
+      depth_ops: Some(Operations {
+        load: LoadOp::Clear(1.0),
+        store: StoreOp::Store,
+      }),
+      stencil_ops: None,
+    };
+
+    let mut pass=encoder.begin_render_pass(&RenderPassDescriptor {
+      label: Some("3D render pass"),
+      color_attachments: &[Some(color_attachment)],
+      depth_stencil_attachment: Some(depth_attachment),
+      ..Default::default()
+    });
+
+    pass.set_pipeline(&self.render_pipeline);
+    pass.set_bind_group(0, &self.camera_bind_group, &[]);
+
+    let width=self.surface_config.width as f32;
+    let height=self.surface_config.height as f32;
+    let size=width.min(height);
+
+    pass.set_viewport(
+      (width - size) * 0.5,
+      (height - size) * 0.5,
+      size,
+      size,
+      0.0,
+      1.0,
     );
 
-    // 3D scene
-    {
-        let color_attachment = RenderPassColorAttachment {
-            view: &texture_view,
-            ops: Operations {
-                store: StoreOp::Store,
-                load: LoadOp::Clear(self.clear_color.into_wgpu_color()),
-            },
-            resolve_target: None,
-            depth_slice: None,
-        };
-
-        let depth_attachment = RenderPassDepthStencilAttachment {
-            view: &self.depth_view,
-            depth_ops: Some(Operations {
-                load: LoadOp::Clear(1.0),
-                store: StoreOp::Store,
-            }),
-            stencil_ops: None,
-        };
-
-        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("3D render pass"),
-            color_attachments: &[Some(color_attachment)],
-            depth_stencil_attachment: Some(depth_attachment),
-            ..Default::default()
-        });
-
-        pass.set_pipeline(&self.render_pipeline);
-        pass.set_bind_group(0, &self.camera_bind_group, &[]);
-
-        let width = self.surface_config.width as f32;
-        let height = self.surface_config.height as f32;
-        let size = width.min(height);
-
-        pass.set_viewport(
-            (width - size) * 0.5,
-            (height - size) * 0.5,
-            size,
-            size,
-            0.0,
-            1.0,
-        );
-
-        for header in &mesh.headers {
-            match header {
-                &BufHeader::VertexBuf { offset, size } => {
-                    pass.set_vertex_buffer(
-                        0,
-                        mesh.vertex_buf.slice(offset..offset + size as u64),
-                    );
-                    pass.draw(
-                        0..size / mem::size_of::<Vertex>() as u32,
-                        0..1,
-                    );
-                }
-                &BufHeader::IndexedBuf {
-                    ix_offset,
-                    vx_offset,
-                    ix_size,
-                    vx_size,
-                } => {
-                    pass.set_index_buffer(
-                        mesh.index_buf.slice(ix_offset..ix_offset + ix_size as u64),
-                        IndexFormat::Uint32,
-                    );
-                    pass.set_vertex_buffer(
-                        0,
-                        mesh.vertex_buf.slice(vx_offset..vx_offset + vx_size as u64),
-                    );
-                    pass.draw_indexed(
-                        0..ix_size / mem::size_of::<u32>() as u32,
-                        0,
-                        0..1,
-                    );
-                }
-            }
+    for header in &mesh.headers {
+      match header {
+        &BufHeader::VertexBuf { offset, size }=> {
+          pass.set_vertex_buffer(
+            0,
+            mesh.vertex_buf.slice(offset..offset + size as u64),
+          );
+          pass.draw(
+            0..size / mem::size_of::<Vertex>() as u32,
+            0..1,
+          );
         }
+        &BufHeader::IndexedBuf { ix_offset, vx_offset, ix_size, vx_size }=> {
+          pass.set_index_buffer(
+            mesh.index_buf.slice(ix_offset..ix_offset + ix_size as u64),
+            IndexFormat::Uint32,
+          );
+          pass.set_vertex_buffer(
+            0,
+            mesh.vertex_buf.slice(vx_offset..vx_offset + vx_size as u64),
+          );
+          pass.draw_indexed(
+            0..ix_size / mem::size_of::<u32>() as u32,
+            0,
+            0..1,
+          );
+        }
+      }
     }
+  }
 
-    // egui overlay
-    {
-        let attachment = RenderPassColorAttachment {
-            view: &texture_view,
-            ops: Operations {
-                load: LoadOp::Load,
-                store: StoreOp::Store,
-            },
-            resolve_target: None,
-            depth_slice: None,
-        };
+  // egui overlay
+  {
+    let attachment=RenderPassColorAttachment {
+      view: &texture_view,
+      ops: Operations {
+        load: LoadOp::Load,
+        store: StoreOp::Store,
+      },
+      resolve_target: None,
+      depth_slice: None,
+    };
 
-        let pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("egui render pass"),
-            color_attachments: &[Some(attachment)],
-            depth_stencil_attachment: None,
-            ..Default::default()
-        });
+    let pass=encoder.begin_render_pass(&RenderPassDescriptor {
+      label: Some("egui render pass"),
+      color_attachments: &[Some(attachment)],
+      depth_stencil_attachment: None,
+      ..Default::default()
+    });
 
-        egui_renderer.render(
-            &mut pass.forget_lifetime(),
-            paint_jobs,
-            &screen,
-        );
-    }
-
-    self.queue.submit(
-        callback_buffers
-            .into_iter()
-            .chain(std::iter::once(encoder.finish())),
+    egui_renderer.render(
+      &mut pass.forget_lifetime(),
+      paint_jobs,
+      &screen,
     );
+  }
 
-    for id in &textures_delta.free {
-        egui_renderer.free_texture(id);
-    }
+  self.queue.submit(
+    callback_buffers
+    .into_iter()
+    .chain(std::iter::once(encoder.finish())),
+  );
 
-    self.window.pre_present_notify();
-    self.queue.present(surface_texture);
-}
+  for id in &textures_delta.free {
+    egui_renderer.free_texture(id);
+  }
+
+  self.window.pre_present_notify();
+  self.queue.present(surface_texture);
+  }
 
   pub(crate) fn resize(&mut self,size: PhysicalSize<u32>) {
     if size.width==0 || size.height==0 {
