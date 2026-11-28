@@ -266,43 +266,29 @@ impl State {
     use egui::*;
     let mut changed=false;
 
-    egui::Window::new("HYDROGEN")
+    egui::Window::new("hydrogen atom")
     .default_pos([20.0, 20.0])
     .default_width(260.0)
     .resizable(false)
     .show(&self.egui_ctx, |ui| {
-      ui.heading("Quantum numbers");
+      ui.heading("quantum state");
       ui.add_space(8.0);
 
-      changed|=ui.add(Slider::new(&mut self.n, 1..=6).text("n · Principal"))
+      changed|=ui.add(Slider::new(&mut self.n, 1..=7).text("n · principal"))
       .changed();
 
       self.l=self.l.min(self.n - 1);
 
-      changed|=ui.add(Slider::new(&mut self.l, 0..=self.n - 1).text("l · Azimuthal"))
+      changed|=ui.add(Slider::new(&mut self.l, 0..=self.n - 1).text("l · azimuthal"))
       .changed();
 
       self.m=self.m.clamp(-(self.l as i32), self.l as i32);
 
-      changed|=ui.add(Slider::new(&mut self.m,-(self.l as i32)..=(self.l as i32)).text("m · Magnetic"))
+      changed|=ui.add(Slider::new(&mut self.m,-(self.l as i32)..=(self.l as i32)).text("m · magnetic"))
       .changed();
 
       ui.add_space(12.0);
       ui.separator();
-      ui.heading("Visualization");
-
-      ui.add(
-        Slider::new(&mut self.intensity, 0.1..=3.0)
-        .text("Color intensity"),
-      );
-
-      ui.add_space(12.0);
-      ui.separator();
-      ui.heading("Plane clipping");
-
-      ui.add(Slider::new(&mut self.clip[0], -1.0..=1.0).text("X"));
-      ui.add(Slider::new(&mut self.clip[1], -1.0..=1.0).text("Y"));
-      ui.add(Slider::new(&mut self.clip[2], -1.0..=1.0).text("Z"));
     });
 
     changed
