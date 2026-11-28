@@ -6,7 +6,9 @@ struct Camera {
 struct Animation {
     time: f32,
     angular_velocity: f32,
-    _padding: vec2<f32>,
+    intensity: f32,
+    _padding: f32,
+    clip: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -24,6 +26,7 @@ struct Vertex {
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) clipping_position: vec3<f32>,
 };
 
 fn rotation_y(angle: f32) -> mat4x4<f32> {
@@ -43,9 +46,10 @@ fn vs_main(vertex: Vertex) -> VertexOut {
     var out: VertexOut;
 
     let angle = animation.time * animation.angular_velocity;
-    let rotation = rotation_y(angle);
+    let rotated = rotation_y(angle) * vertex.position;
 
-    out.position = camera.view_projection * rotation * vertex.position;
+    out.position = camera.view_projection * rotated;
+    out.clipping_position = rotated.xyz;
     out.color = vertex.color;
 
     return out;
@@ -53,7 +57,27 @@ fn vs_main(vertex: Vertex) -> VertexOut {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    return in.color;
+    let p = in.clipping_position;
+
+    // Keep the region on the negative side of each clipping plane.
+let clip = animation.clip.xyz;
+
+if (
+    p.x > clip.x &&
+    p.y > clip.y &&
+    p.z > clip.z
+) {
+    discard;
+}
+
+    let intensity = max(animation.intensity, 0.001);
+
+let rgb = pow(
+    max(in.color.rgb, vec3<f32>(0.0)),
+    vec3<f32>(1.0 / intensity)
+);
+
+    return vec4<f32>(rgb, in.color.a);
 }
 
 

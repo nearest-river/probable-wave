@@ -37,14 +37,15 @@ impl Scene {
     self.atom=Some(atom);
   }
 
-  pub(crate) fn render(
+pub(crate) fn render(
     &mut self,
     renderer: &mut Renderer,
+    clip: [f32; 3],
+    intensity: f32,
     egui_renderer: &mut egui_wgpu::Renderer,
     paint_jobs: &[egui::ClippedPrimitive],
     textures_delta: &egui::TexturesDelta,
-) {
-    let now=Instant::now();
+) {    let now=Instant::now();
     let _dt=self.time
     .replace(now)
     .map_or(0.0,|t_0| now.duration_since(t_0).as_secs_f32());
@@ -66,8 +67,15 @@ impl Scene {
 
     // SAFETY(nate): trust me bro.
     let mesh=unsafe { self.mesh.as_ref().unwrap_unchecked() };
-
-    renderer.render(mesh, time, egui_renderer, paint_jobs, textures_delta);
+renderer.render(
+    mesh,
+    time,
+    clip,
+    intensity,
+    egui_renderer,
+    paint_jobs,
+    textures_delta,
+);
   }
 
   #[inline(always)]

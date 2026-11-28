@@ -90,7 +90,9 @@ struct CameraUniform {
 struct AnimationUniform {
   time: f32,
   angular_velocity: f32,
-  _padding: [f32; 2],
+  intensity: f32,
+  _padding: f32,
+  clip: [f32; 4],
 }
 
 const CAMERA_FOV: f32=120f32.to_radians(); // 90deg
@@ -135,13 +137,15 @@ impl Renderer {
       contents: bytemuck::bytes_of(&camera_uniform),
     });
 
-    let animation_uniform=AnimationUniform {
+    let animation_uniform = AnimationUniform {
       time: 0.0,
       angular_velocity: 0.5,
-      _padding: [0.0; 2]
+      intensity: 1.0,
+      _padding: 0.0,
+      clip: [1.0, 1.0, 1.0, 0.0],
     };
 
-    let animation_buf=dev.create_buffer_init(&BufferInitDescriptor {
+    let animation_buf = dev.create_buffer_init(&BufferInitDescriptor {
       label: Some("animation uniform buffer"),
       usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
       contents: bytemuck::bytes_of(&animation_uniform),
@@ -162,11 +166,11 @@ impl Renderer {
         },
         BindGroupLayoutEntry {
           binding: 1,
-          visibility: ShaderStages::VERTEX,
-            ty: BindingType::Buffer {
-              ty: BufferBindingType::Uniform,
-              has_dynamic_offset: false,
-              min_binding_size: None,
+          visibility: ShaderStages::VERTEX_FRAGMENT,
+          ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
           },
           count: None,
         },
@@ -264,25 +268,16 @@ impl Renderer {
     self.clear_color
   }
 
-  pub(crate) fn render(
-    &self,
-    mesh: &Mesh,
-    time: f32,
-    egui_renderer: &mut egui_wgpu::Renderer,
-    paint_jobs: &[egui::ClippedPrimitive],
-    textures_delta: &egui::TexturesDelta,
-) {
-    let animation = AnimationUniform {
-      time,
-      angular_velocity: 0.5,
-      _padding: [0.0; 2]
-    };
+  pub(crate) fn render(&self,mesh: &Mesh,time: f32,clip: [f32; 3],intensity: f32,egui_renderer: &mut egui_wgpu::Renderer,paint_jobs: &[egui::ClippedPrimitive],textures_delta: &egui::TexturesDelta) {
+  let animation=AnimationUniform {
+    time,
+    angular_velocity: 0.5,
+    intensity,
+    _padding: 0.0,
+    clip: [clip[0], clip[1], clip[2], 0.0]
+  };
 
-    self.queue.write_buffer(
-      &self.animation_buf,
-      0,
-      bytemuck::bytes_of(&animation),
-    );
+  self.queue.write_buffer(&self.animation_buf,0,bytemuck::bytes_of(&animation));
 
     let surface_texture = match self.surface.get_current_texture() {
         CurrentSurfaceTexture::Success(frame) => frame,

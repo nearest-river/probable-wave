@@ -120,7 +120,7 @@ impl ApplicationHandler for State {
     );
 
     let renderer=pollster::block_on(Renderer::new(window.clone(),self.clear_color));
-    let egui_state = egui_winit::State::new(
+    let egui_state=egui_winit::State::new(
       self.egui_ctx.clone(),
       egui::ViewportId::ROOT,
       &window,
@@ -129,135 +129,117 @@ impl ApplicationHandler for State {
       None,
     );
 
-    let egui_renderer = egui_wgpu::Renderer::new(
+    let egui_renderer=egui_wgpu::Renderer::new(
       &renderer.dev,
       renderer.surface_format(),
       egui_wgpu::RendererOptions::PREDICTABLE,
     );
 
-    self.egui_state = Some(egui_state);
-    self.egui_renderer = Some(egui_renderer);
+    self.egui_state=Some(egui_state);
+    self.egui_renderer=Some(egui_renderer);
 
     self.window=Some(window);
     self.renderer=Some(renderer);
   }
 
-  fn window_event(
-    &mut self,
-    event_loop: &ActiveEventLoop,
-    window_id: WindowId,
-    event: WindowEvent,
-) {
-    let Some(window) = self.window.clone() else {
-        return;
+  fn window_event(&mut self,event_loop: &ActiveEventLoop,window_id: WindowId,event: WindowEvent) {
+    let Some(window)=self.window.clone() else {
+      return;
     };
 
-    if window.id() != window_id {
-        return;
+    if window.id()!=window_id {
+      return;
     }
 
-if let Some(egui_state) = &mut self.egui_state {
-    let response = egui_state.on_window_event(&window, &event);
+    if let Some(egui_state)=&mut self.egui_state {
+      let response=egui_state.on_window_event(&window, &event);
 
-    if response.consumed {
-        self.dragging = false;
+      if response.consumed {
+        self.dragging=false;
+      }
     }
-}
 
     match event {
-        WindowEvent::CloseRequested => event_loop.exit(),
-
-        WindowEvent::Resized(size) => {
-            if let Some(renderer) = &mut self.renderer {
-                renderer.resize(size);
-            }
+      WindowEvent::CloseRequested=> event_loop.exit(),
+      WindowEvent::Resized(size)=> {
+        if let Some(renderer)=&mut self.renderer {
+          renderer.resize(size);
         }
-WindowEvent::RedrawRequested => {
-    let Some(egui_state) = &mut self.egui_state else {
-        return;
-    };
-
-    let raw_input = egui_state.take_egui_input(&window);
-    let ctx = self.egui_ctx.clone();
-
-    let mut quantum_changed = false;
-    let output = ctx.run_ui(raw_input, |_| {
-        quantum_changed = self.control_panel();
-    });
-
-    let egui::FullOutput {
-        platform_output,
-        textures_delta,
-        shapes,
-        pixels_per_point,
-        ..
-    } = output;
-
-    self.egui_state
-        .as_mut()
-        .unwrap()
-        .handle_platform_output(&window, platform_output);
-
-    let paint_jobs = ctx.tessellate(shapes, pixels_per_point);
-
-    if quantum_changed {
-        let Some(renderer) = &self.renderer else {
-            return;
+      },
+      WindowEvent::RedrawRequested=> {
+        let Some(egui_state)=&mut self.egui_state else {
+          return;
         };
 
-        self.scene.set_quantum_state(
+        let raw_input=egui_state.take_egui_input(&window);
+        let ctx=self.egui_ctx.clone();
+
+        let mut quantum_state_changed=false;
+        let output=ctx.run_ui(raw_input, |_| {
+          quantum_state_changed=self.control_panel();
+        });
+
+        let egui::FullOutput { platform_output, textures_delta, shapes, pixels_per_point, .. }=output;
+
+        self.egui_state
+        .as_mut()
+        .unwrap()
+        .handle_platform_output(&window,platform_output);
+
+        let paint_jobs=ctx.tessellate(shapes, pixels_per_point);
+
+        if quantum_state_changed {
+          let Some(renderer)=&self.renderer else {
+            return;
+          };
+
+          self.scene.set_quantum_state(
             QuantumState::new(
-                self.n,
-                self.l,
-                self.m,
-                SpinProjection::Up,
+              self.n,
+              self.l,
+              self.m,
+              SpinProjection::Up,
             )
             .unwrap(),
             renderer,
-        );
+          );
+        }
+
+        let (Some(renderer), Some(egui_renderer))=(&mut self.renderer, &mut self.egui_renderer) else {
+          return;
+        };
+
+        self.scene.render(
+          renderer,
+          self.clip.to_array(),
+          self.intensity,
+          egui_renderer,
+          &paint_jobs,
+          &textures_delta
+          );
+      },
+      WindowEvent::MouseInput { state, button: MouseButton::Left, .. }=> {
+        self.dragging=state == ElementState::Pressed;
+      },
+      WindowEvent::MouseWheel { delta, .. }=> {
+        let amount=match delta {
+          MouseScrollDelta::LineDelta(_, y)=> y,
+          MouseScrollDelta::PixelDelta(position)=> {
+            position.y as f32 / 120.0
+          },
+        };
+
+        if let Some(renderer)=&mut self.renderer {
+          renderer.zoom_camera(amount);
+        }
+      },
+      WindowEvent::Focused(false)=> {
+        self.dragging=false;
+      },
+      _=> {},
     }
+  }
 
-    let (Some(renderer), Some(egui_renderer)) =
-        (&mut self.renderer, &mut self.egui_renderer)
-    else {
-        return;
-    };
-
-    self.scene.render(
-        renderer,
-        egui_renderer,
-        &paint_jobs,
-        &textures_delta,
-    );
-}
-        WindowEvent::MouseInput {
-            state,
-            button: MouseButton::Left,
-            ..
-        } => {
-            self.dragging = state == ElementState::Pressed;
-        }
-
-        WindowEvent::MouseWheel { delta, .. } => {
-            let amount = match delta {
-                MouseScrollDelta::LineDelta(_, y) => y,
-                MouseScrollDelta::PixelDelta(position) => {
-                    position.y as f32 / 120.0
-                }
-            };
-
-            if let Some(renderer) = &mut self.renderer {
-                renderer.zoom_camera(amount);
-            }
-        }
-
-        WindowEvent::Focused(false) => {
-            self.dragging = false;
-        }
-
-        _ => {}
-    }
-}
   fn device_event(&mut self,_event_loop: &ActiveEventLoop,_device_id: DeviceId,event: DeviceEvent) {
     if !self.dragging {
       return;
@@ -280,54 +262,54 @@ WindowEvent::RedrawRequested => {
 }
 
 impl State {
-fn control_panel(&mut self) -> bool {
-  use egui::*;
-    let mut changed = false;
+  fn control_panel(&mut self)-> bool {
+    use egui::*;
+    let mut changed=false;
 
     egui::Window::new("HYDROGEN")
-        .default_pos([20.0, 20.0])
-        .default_width(260.0)
-        .resizable(false)
-        .show(&self.egui_ctx, |ui| {
-            ui.heading("Quantum numbers");
-            ui.add_space(8.0);
+    .default_pos([20.0, 20.0])
+      .default_width(260.0)
+    .resizable(false)
+    .show(&self.egui_ctx, |ui| {
+      ui.heading("Quantum numbers");
+      ui.add_space(8.0);
 
-            changed |= ui
-                .add(Slider::new(&mut self.n, 1..=6).text("n · Principal"))
-                .changed();
+      changed |= ui
+        .add(Slider::new(&mut self.n, 1..=6).text("n · Principal"))
+        .changed();
 
-            self.l = self.l.min(self.n - 1);
+      self.l=self.l.min(self.n - 1);
 
-            changed |= ui
-                .add(Slider::new(&mut self.l, 0..=self.n - 1).text("l · Azimuthal"))
-                .changed();
+      changed |= ui
+        .add(Slider::new(&mut self.l, 0..=self.n - 1).text("l · Azimuthal"))
+        .changed();
 
-            self.m = self.m.clamp(-(self.l as i32), self.l as i32);
+      self.m=self.m.clamp(-(self.l as i32), self.l as i32);
 
-            changed |= ui
-                .add(Slider::new(
-                    &mut self.m,
-                    -(self.l as i32)..=(self.l as i32),
-                ).text("m · Magnetic"))
-                .changed();
+      changed |= ui
+        .add(Slider::new(
+          &mut self.m,
+          -(self.l as i32)..=(self.l as i32),
+        ).text("m · Magnetic"))
+        .changed();
 
-            ui.add_space(12.0);
-            ui.separator();
-            ui.heading("Visualization");
+      ui.add_space(12.0);
+      ui.separator();
+      ui.heading("Visualization");
 
-            ui.add(
-                Slider::new(&mut self.intensity, 0.1..=3.0)
-                    .text("Color intensity"),
-            );
+      ui.add(
+        Slider::new(&mut self.intensity, 0.1..=3.0)
+          .text("Color intensity"),
+      );
 
-            ui.add_space(12.0);
-            ui.separator();
-            ui.heading("Plane clipping");
+      ui.add_space(12.0);
+      ui.separator();
+      ui.heading("Plane clipping");
 
-            ui.add(Slider::new(&mut self.clip[0], -6.0..=6.0).text("X"));
-            ui.add(Slider::new(&mut self.clip[1], -6.0..=6.0).text("Y"));
-            ui.add(Slider::new(&mut self.clip[2], -6.0..=6.0).text("Z"));
-        });
+      ui.add(Slider::new(&mut self.clip[0], -1.0..=1.0).text("X"));
+      ui.add(Slider::new(&mut self.clip[1], -1.0..=1.0).text("Y"));
+      ui.add(Slider::new(&mut self.clip[2], -1.0..=1.0).text("Z"));
+    });
 
     changed
 }
